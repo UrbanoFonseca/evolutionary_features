@@ -3,20 +3,45 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import cross_val_score
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+
+
 
 class evolutionary_features:
     # Applies evolutionary algorithm to feature selction by multiplying weights for each feature.
     
-    def train(self, model, X, Y, method='predict', population=100, 
+    def train(self, model, X, Y, population=100, 
               hall_of_fame= 20, crossovers=40,  mutations=30, 
-              generations=20):
+              generations=20, binary=False, tolerance=10):
+
+        '''
+        Next versions:
+        - Add upper and lower limits to the weights.
+        - Add binary option.
 
 
-        print('Coercing the data')
+        Parameters:
+        
+        population: the number of individuals of the population.
+
+        hall_of_fame: the best will be passed untouched onto the next generation.
+
+        crossovers: a breed will be borne from the mating of a father and a mother. 
+
+        mutations: take an individual and change some of its features.
+
+        binary: 
+            False - weight between [0, 1]
+            True -  0 or 1.
+
+        '''
+
+
         # Make sure the data is coerce
         if population < hall_of_fame + crossovers + mutations:
             raise ValueError('The population must be greater than evolutions')
 
+        # If the data is too big, test on a data split.
         if np.shape(X)[1] >= 10000:
             kf = StratifiedKFold(n_splits=3)
             train_index, test_index = kf.split(X, Y)
@@ -27,21 +52,22 @@ class evolutionary_features:
             y_train, y_test = Y, Y
 
         # Convert percentage to integer
-        for parameter in [hall_of_fame, crossovers, mutations]:
-            if parameter < 1:
-                parameter = int(parameter * population)
+        if hall_of_fame < 1:
+            hall_of_fame = int(hall_of_fame * population)
 
+        if crossovers < 1:
+            crossovers = int(crossovers * population)
 
-        print('Generating the first random sample')
+        if mutations < 1:
+            mutations = int(mutations * population)
+
         # This function creates a random set of weigths that will multiply by each feature of the data
         # Apply a genetic algorithm to the predict
-        np.random.seed(1)
         w0 = np.random.rand(population, np.shape(X)[1]).tolist()
 
         # Create a record of the weights
         allGenes = pd.DataFrame(columns=['Genes','Result'])
 
-        print('Testing the first sample')
         # individual is a vector of weights
         id = 0
         for individual in w0:
@@ -51,12 +77,21 @@ class evolutionary_features:
             allGenes.loc[id, 'Result'] = np.mean(cross_val_score(model, new_x, Y, cv=4))
             id += 1
         
-        print('Starting point: ', max(allGenes['Result']))
+        # Define the benchmark as the cross val score without data treatment.
+        start_point = np.mean(cross_val_score(model, x_train, y_train, cv=4))
+
+        print('Starting point: ', start_point)
         
         evolution = pd.DataFrame(columns=['Result'])
-        evolution.loc['Start', 'Result'] = max(allGenes['Result'])
+        evolution.loc['Start', 'Result'] = start_point
 		
-        for generation in range(1, generations + 1):
+        del(start_point)
+
+        # Apply the genetic algorithm
+        generation, count_equal, new_result = 1, 0 ,0
+
+        while generation < generations and count_equal < tolerance:
+
             # Generate a new generation
             allGenes = evolutionary_features.new_generation(allGenes,
                                                             population=population,
@@ -69,9 +104,23 @@ class evolutionary_features:
                 new_x = weights * x_train
                 # Cross validate the new generation
                 allGenes.loc[individual, 'Result'] = np.mean(cross_val_score(model, new_x, Y, cv=4))
-            print(generation, ' generation: ', max(allGenes['Result']))
-            evolution.loc[generation, 'Result'] = max(allGenes['Result'])
+            
+            # Save the last result and compare
+            last_result = new_result
+
+            new_result = max(allGenes['Result'])
+
+            print(generation, ' generation: ', new_result)
+            evolution.loc[generation, 'Result'] = new_result
+
+            if last_result == new_result:
+                count_equal += 1
         
+            
+            generation += 1
+            
+
+
         # Set the best estimator parameter as the best 
         self.best_estimator_ = allGenes.loc[allGenes['Result'].idxmax(), 'Genes']
         
@@ -80,9 +129,9 @@ class evolutionary_features:
 
     
     def crossover(mother, father, split=0.5):
-        
+        # This function returns a crossover between two parents.
         if np.shape(father) != np.shape(mother):
-            print('The parents of the crossover function must have the same lenght')
+            print('The parents of the crossover function must have the same length')
         
         split = int(np.floor(split*len(father)))
         
@@ -148,9 +197,11 @@ class evolutionary_features:
     def plot_evolution_(self):
         benchmark = self.evolution_.iloc[0,0]
         generations = len(self.evolution_) - 1
-                         
+        
         plt.plot((1, generations),(benchmark,benchmark), 'r--', label="benchmark")
-        plt.plot(self.evolution_.iloc[1:, 0], 'g-', label="performance")     
+        plt.plot(self.evolution_.iloc[1:, 0], 'g-', label="performance")
+        plt.xticks(np.arange(1, len(self.evolution_.iloc[:, 0]),1))     
+        plt.title('Evolutionary Features Performance per Generation')
         plt.legend(loc='best')                   
         plt.show()
 
