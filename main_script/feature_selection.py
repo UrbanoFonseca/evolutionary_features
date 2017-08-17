@@ -20,11 +20,6 @@ class evolutionary_features:
               lower_weight=0, upper_weight=1):
 
         '''
-        Next versions:
-        - Add upper and lower limits to the weights.
-        - Add binary option.
-
-
         Parameters:
         
         population: the number of individuals of the population.
@@ -38,6 +33,10 @@ class evolutionary_features:
         binary: 
             False - weight between [0, 1]
             True -  0 or 1.
+
+        tolerance: number of equal results in consecutive generations to stop the program.
+
+        lower, upper weight: minimum and maximum weight for each feature.
 
         '''
 
@@ -81,7 +80,7 @@ class evolutionary_features:
 
         # This function creates a random set of weigths that will multiply by each feature of the data
         # Apply a genetic algorithm to the predict
-        w0 = np.random.rand(population, self.number_features_).tolist()
+        w0 = np.round(np.random.uniform(lower_weight, upper_weight, (population, self.number_features_)).tolist(), decimals)
 
         # Create a record of the weights
         allGenes = pd.DataFrame(columns=['Genes','Result'])
@@ -116,10 +115,12 @@ class evolutionary_features:
                                                             population=population,
                                                             selection=hall_of_fame,
                                                             max_crossover=crossovers,
-                                                            mutation=mutations)
+                                                            mutation=mutations,
+                                                            lower_weight=lower_weight,
+                                                            upper_weight=upper_weight)
 
             for individual in allGenes.index:
-                weights = allGenes.loc[individual, 'Genes']
+                weights = np.round(allGenes.loc[individual, 'Genes'], decimals)
                 new_x = weights * x_train
                 # Cross validate the new generation
                 allGenes.loc[individual, 'Result'] = np.mean(cross_val_score(model, new_x, Y, cv=4))
@@ -147,20 +148,21 @@ class evolutionary_features:
         self.evolution_ = evolution
 
     
-    def crossover(mother, father, split=0.5):
+    def crossover(mother, father):
         # This function returns a crossover between two parents.
+        # mother and father shall be numpy ndarrays.
         if np.shape(father) != np.shape(mother):
             print('The parents of the crossover function must have the same length')
         
-        split = int(np.floor(split*len(father)))
+        split = np.random.randint(0, 1, size=len(mother))
         
-        breed = mother[:split] + father[split:]
+        breed = mother * split + father * (1-split)
         
         return breed
 
 
     def new_generation(self, allGenes, selection=5, max_crossover = 10, mutation=10,
-                       population=100):
+                       population=100, lower_weight=0, upper_weight=1):
         
         # Sort the data
         allGenes = allGenes.sort_values(by='Result', ascending=False)
@@ -186,16 +188,15 @@ class evolutionary_features:
             new_gen.loc[breed, 'Genes'] = child.values.tolist()[0]
         
         # MUTATION
-        for mutant in range(max_crossover + selection,
-                                   max_crossover + selection + mutation):
+        for mutant in range(max_crossover + selection, 
+        					max_crossover + selection + mutation):
             id = mutant - (max_crossover + selection)
             new_gen.loc[mutant, 'Genes'] = (allGenes.iloc[id, 0] *  np.random.normal(loc=1, scale=0.05, size=(len(allGenes.iloc[id, 0])))).tolist()
         
         
         # NEW POPULATION
-        for person in range(max_crossover + selection + mutation,
-                            population):
-            new_gen.loc[person, 'Genes'] = np.random.rand(1, self.number_features_).tolist()[0]
+        for person in range(max_crossover + selection + mutation, population):
+            new_gen.loc[person, 'Genes'] = np.random.uniform(lower_weight, upper_weight, (1, self.number_features_)).tolist()[0]
         
         
         allGenes = new_gen
