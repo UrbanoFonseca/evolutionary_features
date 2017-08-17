@@ -1,7 +1,7 @@
 # Define the dependencies
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
@@ -10,9 +10,14 @@ import matplotlib.ticker as ticker
 class evolutionary_features:
     # Applies evolutionary algorithm to feature selction by multiplying weights for each feature.
     
+
+    def __init__(self, **kwargs):
+    	self.number_features_ = 0
+
     def train(self, model, X, Y, population=100, 
               hall_of_fame= 20, crossovers=40,  mutations=30, 
-              generations=20, binary=False, tolerance=10):
+              generations=20, binary=False, tolerance=10,
+              lower_weight=0, upper_weight=1):
 
         '''
         Next versions:
@@ -36,13 +41,14 @@ class evolutionary_features:
 
         '''
 
-
+        self.number_features_ = np.shape(X)[1]
+        
         # Make sure the data is coerce
         if population < hall_of_fame + crossovers + mutations:
             raise ValueError('The population must be greater than evolutions')
 
         # If the data is too big, test on a data split.
-        if np.shape(X)[1] >= 10000:
+        if self.number_features_ >= 10000:
             kf = StratifiedKFold(n_splits=3)
             train_index, test_index = kf.split(X, Y)
             x_train, x_test = X.iloc[train_index], Y.iloc[test_index]
@@ -50,6 +56,8 @@ class evolutionary_features:
         else:
             x_train, x_test = X, X
             y_train, y_test = Y, Y
+
+
 
         # Convert percentage to integer
         if hall_of_fame < 1:
@@ -61,9 +69,19 @@ class evolutionary_features:
         if mutations < 1:
             mutations = int(mutations * population)
 
+
+        # Define the number of decimal points allowed.
+        if binary == True:
+            lower_weight = 0
+            upper_weight = 1
+            decimals = 0
+        else:
+            decimals = 10
+
+
         # This function creates a random set of weigths that will multiply by each feature of the data
         # Apply a genetic algorithm to the predict
-        w0 = np.random.rand(population, np.shape(X)[1]).tolist()
+        w0 = np.random.rand(population, self.number_features_).tolist()
 
         # Create a record of the weights
         allGenes = pd.DataFrame(columns=['Genes','Result'])
@@ -93,7 +111,8 @@ class evolutionary_features:
         while generation < generations and count_equal < tolerance:
 
             # Generate a new generation
-            allGenes = evolutionary_features.new_generation(allGenes,
+            allGenes = evolutionary_features.new_generation(self,
+            												allGenes,
                                                             population=population,
                                                             selection=hall_of_fame,
                                                             max_crossover=crossovers,
@@ -140,7 +159,7 @@ class evolutionary_features:
         return breed
 
 
-    def new_generation(allGenes, selection=5, max_crossover = 10, mutation=10,
+    def new_generation(self, allGenes, selection=5, max_crossover = 10, mutation=10,
                        population=100):
         
         # Sort the data
@@ -174,9 +193,9 @@ class evolutionary_features:
         
         
         # NEW POPULATION
-        for person in range(mutant + max_crossover + selection,
+        for person in range(max_crossover + selection + mutation,
                             population):
-            new_gen.loc[person, 'Genes'] = np.random.rand(1, np.shape(X)[1]).tolist()[0]
+            new_gen.loc[person, 'Genes'] = np.random.rand(1, self.number_features_).tolist()[0]
         
         
         allGenes = new_gen
